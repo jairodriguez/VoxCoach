@@ -1,10 +1,16 @@
-import { eq } from 'drizzle-orm';
-import { db } from '@/lib/db/drizzle';
-import { users, teams, teamMembers } from '@/lib/db/schema';
-import { setSession } from '@/lib/auth/session';
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/payments/stripe';
 import Stripe from 'stripe';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
+}
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -54,31 +60,34 @@ export async function GET(request: NextRequest) {
       throw new Error("No user ID found in session's client_reference_id.");
     }
 
-    const user = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, Number(userId)))
-      .limit(1);
+    // Rewrite Drizzle query to Supabase client query
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', Number(userId))
+      .single();
 
-    if (user.length === 0) {
+    if (userError || !userData) {
+      console.error('Error fetching user:', userError?.message);
       throw new Error('User not found in database.');
     }
 
-    const userTeam = await db
-      .select({
-        teamId: teamMembers.teamId,
-      })
-      .from(teamMembers)
-      .where(eq(teamMembers.userId, user[0].id))
-      .limit(1);
+    // Rewrite Drizzle query to Supabase client query
+    const { data: userTeamData, error: userTeamError } = await supabase
+      .from('teamMembers')
+      .select('teamId')
+      .eq('userId', userData.id)
+      .single();
 
-    if (userTeam.length === 0) {
+    if (userTeamError || !userTeamData) {
+      console.error('Error fetching user team:', userTeamError?.message);
       throw new Error('User is not associated with any team.');
     }
 
-    await db
-      .update(teams)
-      .set({
+    // Rewrite Drizzle update to Supabase client update
+    const { error: updateError } = await supabase
+      .from('teams')
+      .update({
         stripeCustomerId: customerId,
         stripeSubscriptionId: subscriptionId,
         stripeProductId: productId,
@@ -86,12 +95,23 @@ export async function GET(request: NextRequest) {
         subscriptionStatus: subscription.status,
         updatedAt: new Date(),
       })
-      .where(eq(teams.id, userTeam[0].teamId));
+      .eq('id', userTeamData.teamId);
 
-    await setSession(user[0]);
+    if (updateError) {
+      console.error('Error updating team:', updateError.message);
+      throw updateError;
+    }
+
+    // Assuming setSession needs the user object structure, it might need adjustment
+    // if the Supabase client's returned user object is different from Drizzle's.
+    // For now, I'm passing the userData object from Supabase.
+    await setSession(userData);
+
     return NextResponse.redirect(new URL('/dashboard', request.url));
   } catch (error) {
     console.error('Error handling successful checkout:', error);
     return NextResponse.redirect(new URL('/error', request.url));
   }
 }
+
+import { setSession } from '@/lib/auth/session'; // Keep setSession import
