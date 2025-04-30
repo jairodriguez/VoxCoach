@@ -103,15 +103,15 @@ export const signIn = validatedAction(signInSchema, async (data, formData) => {
 
 // New server action for Google OAuth sign-in
 export async function signInWithGoogle(formData: FormData) {
-  const origin = (await headers()).get('origin'); // Await headers()
-  const redirectTo = formData.get('redirect') as string | null; // Renamed variable
+  const origin = (await headers()).get('origin');
+  const redirectTo = formData.get('redirect') as string | null;
   const priceId = formData.get('priceId') as string | null;
   const inviteId = formData.get('inviteId') as string | null;
 
-  const supabase = createClient();
+  const supabase = await createClient(); // Await createClient()
 
   // Construct the callback URL with original parameters
-  const callbackUrl = `${origin}/sign-in${redirectTo ? `?redirect=${redirectTo}` : ''}${priceId ? `&priceId=${priceId}` : ''}${inviteId ? `&inviteId=${inviteId}` : ''}`;
+  const callbackUrl = `${origin}/auth/callback?redirect=${redirectTo || ''}${priceId ? `&priceId=${priceId}` : ''}${inviteId ? `&inviteId=${inviteId}` : ''}`;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -128,7 +128,7 @@ export async function signInWithGoogle(formData: FormData) {
 
   if (data.url) {
     // Redirect to Google OAuth consent page
-    redirect(data.url); // Calling the imported redirect function
+    redirect(data.url);
   }
 }
 
@@ -210,7 +210,8 @@ export const signUp = validatedAction(signUpSchema, async (data, formData) => {
     } else {
       return { error: 'Invalid or expired invitation.', email, password };
     }
-  } else {
+  }
+  else {
     // Create a new team if there's no invitation
     const newTeam: NewTeam = {
       name: `${email}'s Team`
