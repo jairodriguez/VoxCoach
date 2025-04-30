@@ -18,14 +18,14 @@ import {
 } from '@/lib/db/schema';
 import { comparePasswords, hashPassword, setSession } from '@/lib/auth/session';
 import { redirect } from 'next/navigation';
-import { cookies, headers } from 'next/headers'; // Import headers
+import { cookies, headers } from 'next/headers';
 import { createCheckoutSession } from '@/lib/payments/stripe';
 import { getUser, getUserWithTeam } from '@/lib/db/queries';
 import {
   validatedAction,
   validatedActionWithUser
 } from '@/lib/auth/middleware';
-import { createClient } from '@/utils/supabase/server'; // Import Supabase server client
+import { createClient } from '@/utils/supabase/server';
 
 async function logActivity(
   teamId: number | null | undefined,
@@ -103,15 +103,15 @@ export const signIn = validatedAction(signInSchema, async (data, formData) => {
 
 // New server action for Google OAuth sign-in
 export async function signInWithGoogle(formData: FormData) {
-  const origin = headers().get('origin');
-  const redirect = formData.get('redirect') as string | null;
+  const origin = (await headers()).get('origin'); // Await headers()
+  const redirectTo = formData.get('redirect') as string | null; // Renamed variable
   const priceId = formData.get('priceId') as string | null;
   const inviteId = formData.get('inviteId') as string | null;
 
   const supabase = createClient();
 
   // Construct the callback URL with original parameters
-  const callbackUrl = `${origin}/sign-in${redirect ? `?redirect=${redirect}` : ''}${priceId ? `&priceId=${priceId}` : ''}${inviteId ? `&inviteId=${inviteId}` : ''}`;
+  const callbackUrl = `${origin}/sign-in${redirectTo ? `?redirect=${redirectTo}` : ''}${priceId ? `&priceId=${priceId}` : ''}${inviteId ? `&inviteId=${inviteId}` : ''}`;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -128,7 +128,7 @@ export async function signInWithGoogle(formData: FormData) {
 
   if (data.url) {
     // Redirect to Google OAuth consent page
-    redirect(data.url);
+    redirect(data.url); // Calling the imported redirect function
   }
 }
 
