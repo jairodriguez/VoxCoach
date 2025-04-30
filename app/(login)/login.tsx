@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CircleIcon, Loader2 } from 'lucide-react';
-import { signIn, signUp } from './actions';
+import { signIn, signUp, signInWithGoogle } from './actions';
 import { ActionState } from '@/lib/auth/middleware';
 
 export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
@@ -107,6 +107,19 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
               )}
             </Button>
           </div>
+        </form>
+
+        {/* Add Google Sign-In Button */}
+        <form action={signInWithGoogle}>
+           <input type="hidden" name="redirect" value={redirect || ''} />
+           <input type="hidden" name="priceId" value={priceId || ''} />
+           <input type="hidden" name="inviteId" value={inviteId || ''} />
+          <Button
+            type="submit"
+            className="w-full flex justify-center items-center py-2 px-4 mt-4 border border-gray-300 rounded-full shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+          >
+            Sign in with Google
+          </Button>
         </form>
 
         <div className="mt-6">
