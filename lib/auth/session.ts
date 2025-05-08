@@ -46,6 +46,9 @@ export async function getSession() {
 
 export async function setSession(user: NewUser) {
   const expiresInOneDay = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  if (!user.id) {
+    throw new Error('User ID is missing');
+  }
   const session: SessionData = {
     user: { id: user.id },
     expires: expiresInOneDay.toISOString(),
