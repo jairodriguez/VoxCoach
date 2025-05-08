@@ -255,7 +255,7 @@ export const signUp = async (prevState: any, formData: FormData) => {
 
 export async function signOut() {
   const user = (await getUser()) as User;
-  const userWithTeam = await getUserWithTeam(Number(user.id));
+  const userWithTeam = await getUserWithTeam(user.id);
   await logActivity(userWithTeam?.teamId ? Number(userWithTeam.teamId) : null, String(user.id), ActivityType.SIGN_OUT);
   (await cookies()).delete('session');
 }
@@ -304,7 +304,7 @@ export const updatePassword = validatedActionWithUser(
     }
 
     const newPasswordHash = await hashPassword(newPassword);
-    const userWithTeam = await getUserWithTeam(Number(user.id));
+    const userWithTeam = await getUserWithTeam(user.id);
 
     await Promise.all([
       db
@@ -337,7 +337,7 @@ export const deleteAccount = validatedActionWithUser(
       };
     }
 
-    const userWithTeam = await getUserWithTeam(Number(user.id));
+    const userWithTeam = await getUserWithTeam(user.id);
 
     await logActivity(
       userWithTeam?.teamId ? Number(userWithTeam.teamId) : null,
@@ -379,7 +379,7 @@ export const updateAccount = validatedActionWithUser(
   updateAccountSchema,
   async (data, _, user) => {
     const { name, email } = data;
-    const userWithTeam = await getUserWithTeam(Number(user.id));
+    const userWithTeam = await getUserWithTeam(user.id);
 
     await Promise.all([
       db.update(users).set({ name, email }).where(eq(users.id, user.id)),
@@ -398,7 +398,7 @@ export const removeTeamMember = validatedActionWithUser(
   removeTeamMemberSchema,
   async (data, _, user) => {
     const { memberId } = data;
-    const userWithTeam = await getUserWithTeam(Number(user.id));
+    const userWithTeam = await getUserWithTeam(user.id);
 
     if (!userWithTeam?.teamId) {
       return { error: 'User is not part of a team' };
@@ -432,7 +432,7 @@ export const inviteTeamMember = validatedActionWithUser(
   inviteTeamMemberSchema,
   async (data, _, user) => {
     const { email, role } = data;
-    const userWithTeam = await getUserWithTeam(Number(user.id));
+    const userWithTeam = await getUserWithTeam(user.id);
 
     if (!userWithTeam?.teamId) {
       return { error: 'User is not part of a team' };
