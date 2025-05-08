@@ -6,12 +6,13 @@ import path from 'path';
 
 dotenv.config();
 
-if (!process.env.POSTGRES_URL) {
+const POSTGRES_URL = process.env.POSTGRES_URL;
+if (!POSTGRES_URL) {
   throw new Error('POSTGRES_URL environment variable is not set');
 }
 
 async function main() {
-  const client = postgres(process.env.POSTGRES_URL, {
+  const client = postgres(POSTGRES_URL, {
     ssl: {
       rejectUnauthorized: false
     },
