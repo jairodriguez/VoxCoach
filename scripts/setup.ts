@@ -3,6 +3,7 @@ import { execSync } from 'child_process';
 import { config } from 'dotenv';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
+export const runtime = 'nodejs';
 
 // Load existing .env file if it exists
 const envPath = join(process.cwd(), '.env');

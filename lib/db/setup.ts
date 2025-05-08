@@ -5,6 +5,7 @@ import readline from 'node:readline';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
+export const runtime = 'nodejs';
 
 const execAsync = promisify(exec);
 
