@@ -27,6 +27,7 @@ yarn-error.log*
 
 # local env files
 .env
+.env.local
 
 # vercel
 .vercel
@@ -39,3 +40,33 @@ next-env.d.ts
 # Docker
 postgres_data/
 .env*.local
+
+# Added by Claude Task Master
+# Logs
+logs
+*.log
+dev-debug.log
+# Dependency directories
+node_modules/
+# Environment variables
+# Editor directories and files
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+# Task files
+tasks.json
+tasks/ 
+
+.env
+.cursor/
+.roo/
+.roomodes
+.windsurfrules
+package-lock.json
+scripts/test-supabase.js
+scripts/example_prd.txt
+scripts/voxcoach_prd.txt

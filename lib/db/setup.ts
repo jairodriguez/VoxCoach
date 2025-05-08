@@ -34,15 +34,24 @@ async function checkStripeCLI() {
     try {
       await execAsync('stripe config --list');
       console.log('Stripe CLI is authenticated.');
+      return true;
     } catch (error) {
       console.log(
         'Stripe CLI is not authenticated or the authentication has expired.'
       );
       console.log('Please run: stripe login');
       const answer = await question(
+        'Do you want to skip Stripe setup for now? (y/n): '
+      );
+      if (answer.toLowerCase() === 'y') {
+        console.log('Skipping Stripe setup...');
+        return false;
+      }
+
+      const authAnswer = await question(
         'Have you completed the authentication? (y/n): '
       );
-      if (answer.toLowerCase() !== 'y') {
+      if (authAnswer.toLowerCase() !== 'y') {
         console.log(
           'Please authenticate with Stripe CLI and run this script again.'
         );
@@ -53,6 +62,7 @@ async function checkStripeCLI() {
       try {
         await execAsync('stripe config --list');
         console.log('Stripe CLI authentication confirmed.');
+        return true;
       } catch (error) {
         console.error(
           'Failed to verify Stripe CLI authentication. Please try again.'
@@ -61,9 +71,15 @@ async function checkStripeCLI() {
       }
     }
   } catch (error) {
-    console.error(
-      'Stripe CLI is not installed. Please install it and try again.'
+    console.log('Stripe CLI is not installed.');
+    const answer = await question(
+      'Do you want to skip Stripe setup for now? (y/n): '
     );
+    if (answer.toLowerCase() === 'y') {
+      console.log('Skipping Stripe setup...');
+      return false;
+    }
+
     console.log('To install Stripe CLI, follow these steps:');
     console.log('1. Visit: https://docs.stripe.com/stripe-cli');
     console.log(
@@ -91,7 +107,20 @@ async function getPostgresURL(): Promise<string> {
     console.log(
       'You can find Postgres databases at: https://vercel.com/marketplace?category=databases'
     );
-    return await question('Enter your POSTGRES_URL: ');
+    console.log('Please enter your Postgres connection string in the format: postgresql://username:password@host:port/database');
+    const url = await question('Enter your POSTGRES_URL: ');
+    
+    // Validate the URL format
+    try {
+      new URL(url);
+      if (!url.startsWith('postgresql://')) {
+        throw new Error('URL must start with postgresql://');
+      }
+      return url;
+    } catch (error) {
+      console.error('Invalid Postgres URL format. Please make sure it starts with postgresql:// and is a valid URL.');
+      process.exit(1);
+    }
   }
 }
 
@@ -183,34 +212,61 @@ function generateAuthSecret(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-async function writeEnvFile(envVars: Record<string, string>) {
-  console.log('Step 6: Writing environment variables to .env');
-  const envContent = Object.entries(envVars)
-    .map(([key, value]) => `${key}=${value}`)
-    .join('\n');
+async function getSupabaseConfig(): Promise<{ url: string; anonKey: string }> {
+  console.log('Step 6: Setting up Supabase configuration');
+  console.log('You can find your Supabase URL and anon key at: https://supabase.com/dashboard/project/_/settings/api');
+  const url = await question('Enter your Supabase URL: ');
+  const anonKey = await question('Enter your Supabase anon key: ');
+  return { url, anonKey };
+}
 
-  await fs.writeFile(path.join(process.cwd(), '.env'), envContent);
-  console.log('.env file created with the necessary variables.');
+async function writeEnvFile(envVars: Record<string, string>) {
+  console.log('Step 7: Writing environment variables to .env');
+  try {
+    const envContent = Object.entries(envVars)
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n');
+
+    const envPath = path.join(process.cwd(), '.env');
+    await fs.writeFile(envPath, envContent);
+    console.log(`Successfully wrote .env file to: ${envPath}`);
+    console.log('Environment variables written:');
+    console.log(envContent);
+  } catch (error) {
+    console.error('Error writing .env file:', error);
+    throw error;
+  }
 }
 
 async function main() {
-  await checkStripeCLI();
+  const stripeEnabled = await checkStripeCLI();
 
   const POSTGRES_URL = await getPostgresURL();
-  const STRIPE_SECRET_KEY = await getStripeSecretKey();
-  const STRIPE_WEBHOOK_SECRET = await createStripeWebhook();
   const BASE_URL = 'http://localhost:3000';
   const AUTH_SECRET = generateAuthSecret();
+  const { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } = await getSupabaseConfig();
 
-  await writeEnvFile({
+  const envVars: Record<string, string> = {
     POSTGRES_URL,
-    STRIPE_SECRET_KEY,
-    STRIPE_WEBHOOK_SECRET,
     BASE_URL,
     AUTH_SECRET,
-  });
+    NEXT_PUBLIC_SUPABASE_URL: SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: SUPABASE_ANON_KEY,
+  };
+
+  if (stripeEnabled) {
+    const STRIPE_SECRET_KEY = await getStripeSecretKey();
+    const STRIPE_WEBHOOK_SECRET = await createStripeWebhook();
+    envVars.STRIPE_SECRET_KEY = STRIPE_SECRET_KEY;
+    envVars.STRIPE_WEBHOOK_SECRET = STRIPE_WEBHOOK_SECRET;
+  }
+
+  await writeEnvFile(envVars);
 
   console.log('🎉 Setup completed successfully!');
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error('Error during setup:', error);
+  process.exit(1);
+});

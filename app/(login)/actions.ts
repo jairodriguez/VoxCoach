@@ -29,7 +29,7 @@ import { createClient } from '@/utils/supabase/server';
 
 async function logActivity(
   teamId: number | null | undefined,
-  userId: number,
+  userId: string,
   type: ActivityType,
   ipAddress?: string
 ) {
@@ -89,7 +89,7 @@ export const signIn = validatedAction(signInSchema, async (data, formData) => {
 
   await Promise.all([
     setSession(foundUser),
-    logActivity(foundTeam?.id, foundUser.id, ActivityType.SIGN_IN)
+    logActivity(foundTeam?.id ? Number(foundTeam.id) : null, String(foundUser.id), ActivityType.SIGN_IN)
   ]);
 
   const redirectTo = formData.get('redirect') as string | null;
@@ -138,126 +138,125 @@ const signUpSchema = z.object({
   inviteId: z.string().optional()
 });
 
-export const signUp = validatedAction(signUpSchema, async (data, formData) => {
-  const { email, password, inviteId } = data;
+export const signUp = async (prevState: any, formData: FormData) => {
+  const email = formData.get('email') as string;
+  const password = formData.get('password') as string;
+  const inviteId = formData.get('inviteId') as string | null;
 
-  const existingUser = await db
-    .select()
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
+  console.log('Starting sign-up process for:', email);
+  console.log('Environment variables check:');
+  console.log('NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+  console.log('NEXT_PUBLIC_SUPABASE_ANON_KEY:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.slice(0, 10) + '...');
 
-  if (existingUser.length > 0) {
-    return {
-      error: 'Failed to create user. Please try again.',
+  try {
+    const supabase = await createClient();
+    console.log('Supabase client created successfully');
+
+    console.log('Attempting to sign up with Supabase...');
+    const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
-      password
-    };
-  }
+      password,
+      options: {
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+        data: {
+          email: email,
+        }
+      }
+    });
 
-  const passwordHash = await hashPassword(password);
-
-  const newUser: NewUser = {
-    email,
-    passwordHash,
-    role: 'owner' // Default role, will be overridden if there's an invitation
-  };
-
-  const [createdUser] = await db.insert(users).values(newUser).returning();
-
-  if (!createdUser) {
-    return {
-      error: 'Failed to create user. Please try again.',
-      email,
-      password
-    };
-  }
-
-  let teamId: number;
-  let userRole: string;
-  let createdTeam: typeof teams.$inferSelect | null = null;
-
-  if (inviteId) {
-    // Check if there's a valid invitation
-    const [invitation] = await db
-      .select()
-      .from(invitations)
-      .where(
-        and(
-          eq(invitations.id, parseInt(inviteId)),
-          eq(invitations.email, email),
-          eq(invitations.status, 'pending')
-        )
-      )
-      .limit(1);
-
-    if (invitation) {
-      teamId = invitation.teamId;
-      userRole = invitation.role;
-
-      await db
-        .update(invitations)
-        .set({ status: 'accepted' })
-        .where(eq(invitations.id, invitation.id));
-
-      await logActivity(teamId, createdUser.id, ActivityType.ACCEPT_INVITATION);
-
-      [createdTeam] = await db
-        .select()
-        .from(teams)
-        .where(eq(teams.id, teamId))
-        .limit(1);
-    } else {
-      return { error: 'Invalid or expired invitation.', email, password };
-    }
-  }
-  else {
-    // Create a new team if there's no invitation
-    const newTeam: NewTeam = {
-      name: `${email}'s Team`
-    };
-
-    [createdTeam] = await db.insert(teams).values(newTeam).returning();
-
-    if (!createdTeam) {
+    if (authError) {
+      console.error('Supabase auth error:', authError);
       return {
-        error: 'Failed to create team. Please try again.',
+        error: authError.message,
         email,
-        password
+        password,
       };
     }
 
-    teamId = createdTeam.id;
-    userRole = 'owner';
+    if (!authData.user) {
+      console.error('No user data returned from Supabase');
+      return {
+        error: 'Failed to create user',
+        email,
+        password,
+      };
+    }
 
-    await logActivity(teamId, createdUser.id, ActivityType.CREATE_TEAM);
+    console.log('Supabase user created successfully:', authData.user.id);
+
+    // Create user in our database
+    const hashedPassword = await hashPassword(password);
+    const newUser: NewUser = {
+      id: authData.user.id,
+      email: email,
+      passwordHash: hashedPassword,
+      role: 'member',
+    };
+
+    console.log('Creating user in database...');
+    try {
+      await db.insert(users).values(newUser);
+      console.log('User created in database successfully');
+    } catch (dbError: any) {
+      // Check for duplicate email error
+      if (dbError.code === '23505' && dbError.constraint === 'users_email_key') {
+        return {
+          error: 'User already exists.',
+          email,
+          password,
+        };
+      }
+      // Log and return generic error for other DB errors
+      console.error('Database error during user creation:', dbError);
+      return {
+        error: dbError.message || 'An unexpected error occurred during sign-up',
+        email,
+        password,
+      };
+    }
+
+    // Handle invitation if present
+    if (inviteId) {
+      console.log('Processing invitation:', inviteId);
+      const invitation = await db
+        .select()
+        .from(invitations)
+        .where(eq(invitations.id, parseInt(inviteId)))
+        .limit(1);
+
+      if (invitation.length > 0) {
+        const { teamId, role } = invitation[0];
+        await db.insert(teamMembers).values({
+          userId: authData.user.id,
+          teamId: Number(teamId),
+          role,
+        });
+        console.log('User added to team via invitation');
+      }
+    }
+
+    // Set the session
+    await setSession({
+      ...newUser,
+      id: authData.user.id,
+    });
+    console.log('Session set successfully');
+
+    redirect('/dashboard');
+  } catch (error) {
+    console.error('Error during sign-up:', error);
+    return {
+      error: 'An unexpected error occurred during sign-up',
+      email,
+      password,
+    };
   }
-
-  const newTeamMember: NewTeamMember = {
-    userId: createdUser.id,
-    teamId: teamId,
-    role: userRole
-  };
-
-  await Promise.all([
-    db.insert(teamMembers).values(newTeamMember),
-    logActivity(teamId, createdUser.id, ActivityType.SIGN_UP),
-    setSession(createdUser)
-  ]);
-
-  const redirectTo = formData.get('redirect') as string | null;
-  if (redirectTo === 'checkout') {
-    const priceId = formData.get('priceId') as string;
-    return createCheckoutSession({ team: createdTeam, priceId });
-  }
-
-  redirect('/dashboard');
-});
+};
 
 export async function signOut() {
   const user = (await getUser()) as User;
-  const userWithTeam = await getUserWithTeam(user.id);
-  await logActivity(userWithTeam?.teamId, user.id, ActivityType.SIGN_OUT);
+  const userWithTeam = await getUserWithTeam(Number(user.id));
+  await logActivity(userWithTeam?.teamId ? Number(userWithTeam.teamId) : null, String(user.id), ActivityType.SIGN_OUT);
   (await cookies()).delete('session');
 }
 
@@ -305,14 +304,14 @@ export const updatePassword = validatedActionWithUser(
     }
 
     const newPasswordHash = await hashPassword(newPassword);
-    const userWithTeam = await getUserWithTeam(user.id);
+    const userWithTeam = await getUserWithTeam(Number(user.id));
 
     await Promise.all([
       db
         .update(users)
         .set({ passwordHash: newPasswordHash })
         .where(eq(users.id, user.id)),
-      logActivity(userWithTeam?.teamId, user.id, ActivityType.UPDATE_PASSWORD)
+      logActivity(userWithTeam?.teamId ? Number(userWithTeam.teamId) : null, String(user.id), ActivityType.UPDATE_PASSWORD)
     ]);
 
     return {
@@ -338,11 +337,11 @@ export const deleteAccount = validatedActionWithUser(
       };
     }
 
-    const userWithTeam = await getUserWithTeam(user.id);
+    const userWithTeam = await getUserWithTeam(Number(user.id));
 
     await logActivity(
-      userWithTeam?.teamId,
-      user.id,
+      userWithTeam?.teamId ? Number(userWithTeam.teamId) : null,
+      String(user.id),
       ActivityType.DELETE_ACCOUNT
     );
 
@@ -380,11 +379,11 @@ export const updateAccount = validatedActionWithUser(
   updateAccountSchema,
   async (data, _, user) => {
     const { name, email } = data;
-    const userWithTeam = await getUserWithTeam(user.id);
+    const userWithTeam = await getUserWithTeam(Number(user.id));
 
     await Promise.all([
       db.update(users).set({ name, email }).where(eq(users.id, user.id)),
-      logActivity(userWithTeam?.teamId, user.id, ActivityType.UPDATE_ACCOUNT)
+      logActivity(userWithTeam?.teamId ? Number(userWithTeam.teamId) : null, String(user.id), ActivityType.UPDATE_ACCOUNT)
     ]);
 
     return { name, success: 'Account updated successfully.' };
@@ -399,7 +398,7 @@ export const removeTeamMember = validatedActionWithUser(
   removeTeamMemberSchema,
   async (data, _, user) => {
     const { memberId } = data;
-    const userWithTeam = await getUserWithTeam(user.id);
+    const userWithTeam = await getUserWithTeam(Number(user.id));
 
     if (!userWithTeam?.teamId) {
       return { error: 'User is not part of a team' };
@@ -415,8 +414,8 @@ export const removeTeamMember = validatedActionWithUser(
       );
 
     await logActivity(
-      userWithTeam.teamId,
-      user.id,
+      Number(userWithTeam.teamId),
+      String(user.id),
       ActivityType.REMOVE_TEAM_MEMBER
     );
 
@@ -433,7 +432,7 @@ export const inviteTeamMember = validatedActionWithUser(
   inviteTeamMemberSchema,
   async (data, _, user) => {
     const { email, role } = data;
-    const userWithTeam = await getUserWithTeam(user.id);
+    const userWithTeam = await getUserWithTeam(Number(user.id));
 
     if (!userWithTeam?.teamId) {
       return { error: 'User is not part of a team' };
@@ -479,8 +478,8 @@ export const inviteTeamMember = validatedActionWithUser(
     });
 
     await logActivity(
-      userWithTeam.teamId,
-      user.id,
+      Number(userWithTeam.teamId),
+      String(user.id),
       ActivityType.INVITE_TEAM_MEMBER
     );
 
