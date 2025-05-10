@@ -22,11 +22,11 @@ export function Login({ mode = 'signin' }: { mode?: 'signin' | 'signup' }) {
   );
   const router = useRouter();
 
-  React.useEffect(() => {
-    if (!state.error && mode === 'signup' && !pending) {
-      router.push('/dashboard');
-    }
-  }, [state, mode, pending, router]);
+  // React.useEffect(() => {
+  //   if (!state.error && mode === 'signup' && !pending) {
+  //     router.push('/dashboard');
+  //   }
+  // }, [state, mode, pending, router]);
 
   return (
     <div className="min-h-[100dvh] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
