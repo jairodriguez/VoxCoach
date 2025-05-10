@@ -272,7 +272,7 @@ export const updateAccount = validatedActionWithUser(
     const { name, email } = data;
     await db.update(users).set({ name, email }).where(eq(users.id, user.id));
     const userWithTeam = await getUserWithTeam(user.id);
-    await logActivity(userWithTeam?.teamId, user.id, ActivityType.UPDATE_PROFILE);
+    await logActivity(userWithTeam?.teamId, user.id, ActivityType.UPDATE_ACCOUNT);
     return { success: 'Account updated successfully' };
   }
 );
@@ -416,7 +416,7 @@ export const inviteTeamMember = validatedActionWithUser(
     await logActivity(
       userWithTeam.teamId,
       user.id,
-      ActivityType.INVITE_MEMBER,
+      ActivityType.INVITE_TEAM_MEMBER,
       email // Log invited email as metadata
     );
 
@@ -461,7 +461,7 @@ export const removeTeamMember = validatedActionWithUser(
     await logActivity(
       userWithTeam.teamId,
       user.id,
-      ActivityType.REMOVE_MEMBER,
+      ActivityType.REMOVE_TEAM_MEMBER,
       memberToRemove[0].userId // Log removed member's ID as metadata
     );
 
